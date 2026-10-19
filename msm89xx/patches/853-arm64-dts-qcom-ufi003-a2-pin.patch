@@ -1,0 +1,10 @@
+--- a/arch/arm64/boot/dts/qcom/msm8916-generic-ufi003_mb_v02.dts
++++ b/arch/arm64/boot/dts/qcom/msm8916-generic-ufi003_mb_v02.dts
+@@ -102,3 +102,7 @@
+ 		line-name = "4G_L3";
+ 	};
+ };
++
++&bam_dmux {
++	qcom,a2-pin;
++};
