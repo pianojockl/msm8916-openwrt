@@ -219,6 +219,7 @@ provision_network() {
 	local target_eps="default"
 	case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
 		*hmu05*|*hmuf02v5*) target_eps="none" ;;
+		*ufi003*) target_eps="modem" ;;   # leave stored profile alone (proto: no SetInitialEpsBearerSettings)
 	esac
 
 	cur_apn=$(uci -q get network.modem.apn || echo "")
@@ -338,11 +339,20 @@ flush_bearer_cache() {
 			mmcli -m "$m_path" --delete-bearer="$b" 2>/dev/null || true
 		done
 
-		# 3. Explicitly update initial EPS bearer settings for LTE network attach
-		if [ -n "$target_apn" ]; then
-			log "Setting 3GPP initial EPS bearer APN to '$target_apn' (${target_iptype:-ipv4v6})..."
-			mmcli -m "$m_path" --3gpp-set-initial-eps-bearer-settings="apn=${target_apn},ip-type=${target_iptype:-ipv4v6}" 2>/dev/null || true
-		fi
+		# 3. Explicitly update initial EPS bearer settings for LTE network attach.
+		# Boards whose firmware rejects SetInitialEpsBearerSettings (QMI error 81,
+		# "invalid-parameter-length") must leave the stored profile untouched.
+		case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
+			*hmu05*|*hmuf02v5*|*ufi003*)
+				log "Leaving the modem's stored initial EPS bearer profile untouched on this board"
+				;;
+			*)
+				if [ -n "$target_apn" ]; then
+					log "Setting 3GPP initial EPS bearer APN to '$target_apn' (${target_iptype:-ipv4v6})..."
+					mmcli -m "$m_path" --3gpp-set-initial-eps-bearer-settings="apn=${target_apn},ip-type=${target_iptype:-ipv4v6}" 2>/dev/null || true
+				fi
+				;;
+		esac
 	fi
 }
 
@@ -381,12 +391,35 @@ check_and_flush_radio_cache() {
 		local modem_kv
 		modem_kv=$(mmcli -m "$m_path" -K 2>/dev/null)
 
+		# 0. If we are already connected with exactly the APN this profile
+		#    wants, do not tear the bearer down for a heuristic mismatch.
+		if echo "$modem_kv" | grep -q '^modem.generic.state[[:space:]]*: connected'; then
+			local _bpath _bapn
+			_bpath=$(echo "$modem_kv" | sed -n 's/^modem\.generic\.bearers\.value\[1\][[:space:]]*: //p' | tr -d ' \r\n')
+			if [ -n "$_bpath" ]; then
+				_bapn=$(mmcli -b "$_bpath" -K 2>/dev/null | sed -n 's/^bearer\.properties\.apn[[:space:]]*: //p' | tr -d " '\r\n-")
+				if [ -n "$_bapn" ] && [ "$_bapn" = "$target_apn" ]; then
+					log "Bearer already connected with APN '$_bapn'; radio cache is consistent, no flush needed."
+					return 1
+				fi
+			fi
+		fi
+
 		# 3. Baseband Operator ID check: If modem stack still holds another operator's session
 		local cached_modem_op
 		cached_modem_op=$(echo "$modem_kv" | awk -F': ' '/modem.3gpp.operator-code/ {print $2}' | tr -d ' \r\n')
 		if [ -n "$cached_modem_op" ] && [ "$cached_modem_op" != "--" ] && [ -n "$target_op_code" ] && [ "$cached_modem_op" != "$target_op_code" ]; then
-			log "Operator mismatch in modem radio cache: modem is on '$cached_modem_op', SIM wants '$target_op_code'"
-			need_flush=1
+			case "$cached_modem_op:$target_op_code" in
+				# Equivalent HPLMNs: tele.ring (232-07) rides on the
+				# T-Mobile Austria (232-03) core network.
+				23203:23207|23207:23203)
+					log "Operator '$cached_modem_op' is an equivalent HPLMN for SIM operator '$target_op_code'; not flushing"
+					;;
+				*)
+					log "Operator mismatch in modem radio cache: modem is on '$cached_modem_op', SIM wants '$target_op_code'"
+					need_flush=1
+					;;
+			esac
 		fi
 
 		# 4. Initial EPS Bearer APN check
@@ -418,7 +451,9 @@ check_and_flush_radio_cache() {
 
 		# 6. Radio Mode check
 		local cur_modes
-		cur_modes=$(echo "$modem_kv" | awk -F': ' '/modem.generic.current-modes/ {print $2}')
+		# The value itself contains ": " ("allowed: 3g, 4g; preferred: 4g"), so
+		# print the whole line; extracting $2 yields the literal word "allowed".
+		cur_modes=$(echo "$modem_kv" | awk -F': ' '/modem.generic.current-modes/ {print}')
 		if [ "$is_jio" = "0" ] && [ -n "$cur_modes" ]; then
 			if ! echo "$cur_modes" | grep -qi '3g'; then
 				log "Radio mode mismatch: '$carrier_name' requires 3G fallback, but radio cache lacks 3G"
