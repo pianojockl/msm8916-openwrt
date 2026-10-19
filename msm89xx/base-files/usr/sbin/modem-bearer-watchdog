@@ -307,6 +307,9 @@ while true; do
     KEEPALIVE_INTERVAL=$(uci -q get modem-watchdog.keepalive.interval || echo 10)
     KEEPALIVE_TARGET=$(uci -q get modem-watchdog.keepalive.target || echo "1.1.1.1")
     BEARER_DOWN_RECOVER_SECS=$(uci -q get modem-watchdog.recovery.bearer_down_recover_secs || echo 30)
+    # Recover an interface that is down even if netifd cleared autostart
+    # (a failed proto setup, or the down/up pair in /sbin/ifup, clears it).
+    RECOVER_ANY_DOWN=$(uci -q get modem-watchdog.recovery.recover_any_down || echo 1)
     ZOMBIE_NUDGE_SECS=$(uci -q get modem-watchdog.recovery.zombie_nudge_secs || echo 60)
     MOBILE_OPTIMIZED=$(uci -q get modem-watchdog.general.mobile_optimized || echo 0)
     AUTO_MOBILE=$(uci -q get modem-watchdog.general.auto_mobile || echo 0)
@@ -405,13 +408,13 @@ while true; do
         # intentional ifdown while still catching the stuck case -- the proto's
         # `set_available 0` does NOT clear autostart.
         IF_AUTO=$(ubus call network.interface.modem status 2>/dev/null | jsonfilter -e '@.autostart' 2>/dev/null)
-        if [ "$IF_AUTO" = "true" ] && \
+        if { [ "$IF_AUTO" = "true" ] || [ "$RECOVER_ANY_DOWN" = "1" ]; } && \
            [ "$BEARER_DOWN_SECS" -ge "$BEARER_DOWN_RECOVER_SECS" ] && \
            [ $((NOW - LAST_BEARER_REARM)) -ge "$BEARER_REARM_COOLDOWN" ]; then
             if mmcli -L 2>/dev/null | grep -q '/Modem/'; then
                 ZOMBIE_DOWN_SECS=0
                 logger -t modem-stall-watchdog "Bearer STUCK: netifd interface down ${BEARER_DOWN_SECS}s with a modem present; re-driving (up + re-arm availability)."
-                ubus call network.interface.modem up 2>/dev/null || true
+                ubus call network.interface.modem up '{ "interface" : "modem", "autostart" : true }' 2>/dev/null || true
                 ubus call network.interface.modem notify_proto '{"action":5,"available":true}' 2>/dev/null || true
                 LAST_BEARER_REARM=$NOW
             else
@@ -749,7 +752,7 @@ while true; do
                         fi
 
                         # Bring the bearer back up explicitly (the interface was taken down above).
-                        ubus call network.interface.modem up 2>/dev/null || true
+                        ubus call network.interface.modem up '{ "interface" : "modem", "autostart" : true }' 2>/dev/null || true
 
                         # Wait for netifd bringup (up to 25s)
                         i=0
