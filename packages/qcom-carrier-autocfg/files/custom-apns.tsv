@@ -12,3 +12,5 @@
 # 405861	Reliance Jio	jionet	ipv4v6	4g	generic/apac/reliance/commerci/mcfg_sw.mbn
 #
 # Add your custom carrier entries below:
+# Austria (MCC 232) - tele.ring (T-Mobile Austria)
+23207	tele.ring	webaut	ipv4v6	4g	generic/common/row/gen_3gpp/mcfg_sw.mbn
