@@ -51,13 +51,25 @@ The profile follows the UFI001B baseline:
 - WPA3-SAE and multi-SSID;
 - CPU CPR and the 800 MHz cap.
 
-It leaves HMU05-specific Wi-Fi/PMIC cooling maps, the `a2_pin` modem hold, and
-`qcom-time-daemon` outside the UFI003 profile. These optional board-specific
-features are separate from the validated button, LED, and SIM behavior.
+It leaves HMU05-specific Wi-Fi/PMIC cooling maps and `qcom-time-daemon` outside
+the UFI003 profile. The `a2_pin` modem hold is enabled for UFI003 (patch 853):
+its modem also exposes the A2 quiesce wedge, and runtime validation with
+`power/control=on` stopped the `a2_power.c` assertion. These optional
+board-specific features are separate from the validated button, LED, and SIM
+behavior.
 
 The current UFI common DTS enables the `pm8916_usbin` USB extcon; the PM8916
 charger node is disabled by default. No battery/BMS override is included in
 this profile. Add one only if a physical UFI003 battery is confirmed.
+
+## LTE provisioning notes
+
+The `qcom-carrier-autocfg` package is patched for UFI003 to leave the modem's
+stored initial EPS bearer untouched (`init_epsbearer=modem`), to skip the QMI
+`SetInitialEpsBearerSettings` profile write that this firmware rejects with
+QMI error 81, and to avoid flushing a bearer that is already connected with the
+target APN. A tele.ring (MCC-MNC `23207`) override with APN `webaut` is shipped
+in `packages/qcom-carrier-autocfg/files/custom-apns.tsv`.
 
 ## Build and hardware validation
 

@@ -64,7 +64,7 @@ All CI globs were updated from `openwrt-msm89xx-*` to `*-msm89xx-*`.
 
 New files: `CODEOWNERS`, `MAINTAINERS.md`.
 
-- UZ801 (`803`, `851`, `diffconfigs/uz801`) and UFI003 (`852`,
+- UZ801 (`803`, `851`, `diffconfigs/uz801`) and UFI003 (`852`, `853`,
   `diffconfigs/ufi003`) are routed to their board maintainer.
 - `msm8916.mk` and everything else is routed to the lead.
 - `MAINTAINERS.md` documents duties, the naming convention, the rename history,

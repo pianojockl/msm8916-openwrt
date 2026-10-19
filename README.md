@@ -75,7 +75,7 @@ Recent additions on top of the base port:
 | `uf02`    |      ✅       |    ✅     |          ✅           |          ✅           |           —             |         ✅          |         —          |
 | `mf800b`  |      ✅       |    ✅     |          ✅           |          ✅           |           —             |         —           |         —          |
 
-> The Wi-Fi/PMIC cooling maps are **HMUF02-V5-only** (device-tree gated). The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801 and UF02** boards — all three carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge; `UFI003`, `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it. Everything else applies to every board. Failsafe mode is enabled on **every board** (LED colour varies by board); it has been **live-verified on the HMUF02-V5** only.
+> The Wi-Fi/PMIC cooling maps are **HMUF02-V5-only** (device-tree gated). The `a2_pin` modem-rail hold is enabled on the **HMUF02-V5, UZ801 and UF02** boards — all three carry the same HiMI baseband family (`HIMI_U01_MODEM_V1.0`) exposed to the `a2_power.c:1189` quiesce wedge — and, since patch 853, on **UFI003**, whose modem exposes the same A2 quiesce wedge (validated on hardware with runtime `power/control=on`, which is what `qcom,a2-pin` makes the driver do at `wwan0` open); `UFI001B` (modem `MPSS.DPM.2.0.2`, V2.0) and `MF800B` do not set it. Everything else applies to every board. Failsafe mode is enabled on **every board** (LED colour varies by board); it has been **live-verified on the HMUF02-V5** only.
 
 ### 🛠️ Adding a new board
 
