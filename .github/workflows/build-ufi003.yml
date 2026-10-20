@@ -1,0 +1,87 @@
+name: Build UFI003
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ufi003-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build UFI003 image
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free Disk Space on Runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android
+          sudo apt-get clean
+
+      - name: Determine Version
+        id: vars
+        run: |
+          VERSION=$(cat version 2>/dev/null || echo "25.12.5")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building UFI003 for OpenWrt ${VERSION}"
+
+      - name: Verify branch contains the UFI003 changes
+        run: |
+          grep -q 'qcom,a2-pin' msm89xx/patches/853-arm64-dts-qcom-ufi003-a2-pin.patch
+          grep -q 'target_eps="modem"' packages/qcom-carrier-autocfg/files/qcom-carrier-autocfg.sh
+          grep -q '^23207' packages/qcom-carrier-autocfg/files/custom-apns.tsv
+          echo "UFI003 A2 pin, EPS handling and tele.ring APN override are present."
+
+      - name: Cache OpenWrt Downloads & Toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/staging_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            openwrt/staging_dir/host
+          key: openwrt-cache-${{ steps.vars.outputs.version }}-${{ hashFiles('diffconfigs/ufi003') }}-${{ github.run_id }}
+          restore-keys: |
+            openwrt-cache-${{ steps.vars.outputs.version }}-${{ hashFiles('diffconfigs/ufi003') }}-
+            openwrt-cache-${{ steps.vars.outputs.version }}-
+            openwrt-cache-
+
+      - name: Build Docker Builder Image & Prepare OpenWrt Tree
+        run: ./build.sh prepare
+
+      - name: Compile UFI003 Firmware
+        run: ./build.sh build ufi003
+
+      - name: Compute Checksums
+        run: |
+          cd openwrt/bin/targets/msm89xx/msm8916
+          find . -maxdepth 1 -type f \
+            \( -name '*-squashfs-*.img' -o -name '*-squashfs-*.bin' \
+               -o -name '*-flash.sh' -o -name '*-firmware.zip' \
+               -o -name '*.manifest' \) \
+            -print0 | sort -z | xargs -0 sha256sum > sha256sums-ufi003
+          cat sha256sums-ufi003
+
+      - name: Upload UFI003 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ufi003-firmware-${{ steps.vars.outputs.version }}-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-squashfs-boot.img
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-squashfs-system.img
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-squashfs-sysupgrade.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-squashfs-gpt_both0.bin
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-flash.sh
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*-firmware.zip
+            openwrt/bin/targets/msm89xx/msm8916/*-msm89xx-msm8916-*.manifest
+            openwrt/bin/targets/msm89xx/msm8916/sha256sums-ufi003
